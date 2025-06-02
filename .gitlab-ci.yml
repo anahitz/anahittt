@@ -1,0 +1,69 @@
+stages:
+  - secrets_scan
+  - sast_scan
+  - build
+  - test
+  - deploy
+
+variables:
+  MAVEN_CLI_OPTS: "-s .m2/settings.xml --batch-mode --errors --fail-at-end --show-version"
+
+# Этап поиска секретов с помощью Gitleaks
+gitleaks_scan:
+  stage: secrets_scan
+  image:
+    name: zricethezav/gitleaks
+    entrypoint: [""]
+  script:
+    - gitleaks detect --source . --report-path gitleaks-report.json --redact
+  artifacts:
+    when: always
+    reports:
+      secret_detection: gitleaks-report.json
+    paths:
+      - gitleaks-report.json
+  allow_failure: false
+
+# Этап статического анализа кода с помощью Semgrep
+semgrep_scan:
+  stage: sast_scan
+  image: returntocorp/semgrep
+  script:
+    - semgrep --config=p/ci --json --output=semgrep-report.json
+  artifacts:
+    when: always
+    paths:
+      - semgrep-report.json
+  allow_failure: false
+
+# Этап сборки Maven-проекта
+build:
+  stage: build
+  image: maven:3.8.5-jdk-11
+  script:
+    - mvn $MAVEN_CLI_OPTS clean package
+  artifacts:
+    paths:
+      - target/*.jar
+
+# Этап запуска тестов
+test:
+  stage: test
+  image: maven:3.8.5-jdk-11
+  script:
+    - mvn $MAVEN_CLI_OPTS test
+  artifacts:
+    when: always
+    reports:
+      junit: target/surefire-reports/*.xml
+    paths:
+      - target/surefire-reports/
+
+# Этап деплоя (пример)
+deploy:
+  stage: deploy
+  script:
+    - echo "Запуск деплоя..."
+    - ./deploy.sh
+  only:
+    - main
